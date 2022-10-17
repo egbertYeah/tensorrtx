@@ -3,3 +3,9 @@
 */*.wts
 */*.ppm
 *idea*
+
+retinaface/val/
+retinaface/widerface_calib/
+retinaface/widerface_evaluate/build/
+*.engine
+*.zip

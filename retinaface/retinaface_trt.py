@@ -17,7 +17,7 @@ import tensorrt as trt
 import torch
 import torchvision
 
-INPUT_H = 480  #defined in decode.h
+INPUT_H = 384  #defined in decode.h
 INPUT_W = 640
 CONF_THRESH = 0.75
 IOU_THRESHOLD = 0.4
@@ -325,7 +325,7 @@ if __name__ == "__main__":
     engine_file_path = "build/retina_r50.engine"
 
     retinaface = Retinaface_trt(engine_file_path)
-    input_image_paths = ["zidane.jpg"]
+    input_image_paths = ["build/worlds-largest-selfie.jpg"]
     for i in range(10):
         for input_image_path in input_image_paths:
             # create a new thread to do inference

@@ -70,3 +70,28 @@ python retinaface_trt.py
 
 Check the readme in [home page.](https://github.com/wang-xinyu/tensorrtx)
 
+## WiderFace val dataset Evaluation
+- input shapes: 600 * 384 precision: FP16
+```
+==================== Results ====================
+Easy   Val AP: 0.9118287048272168
+Medium Val AP: 0.8599682627353563
+Hard   Val AP: 0.5373674760745444
+=================================================
+```
+- input shapes: 1600 * 928 precision: FP16
+```
+==================== Results ====================
+Easy   Val AP: 0.9487891129768812
+Medium Val AP: 0.9313402802561251
+Hard   Val AP: 0.8460109365163513
+=================================================
+```
+- input shapes: 1600 * 928 precision: int8
+```
+==================== Results ====================
+Easy   Val AP: 0.9461123555850793
+Medium Val AP: 0.927400216324082
+Hard   Val AP: 0.8364951919028952
+=================================================
+```

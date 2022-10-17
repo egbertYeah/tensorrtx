@@ -4,6 +4,11 @@
 #include <sstream>
 #include <vector>
 #include <chrono>
+
+#include <sys/types.h>
+#include <dirent.h>
+// mkdir
+#include <sys/stat.h>
 #include "cuda_runtime_api.h"
 #include "logging.h"
 #include "common.hpp"
@@ -316,115 +321,148 @@ void doInference(IExecutionContext& context, float* input, float* output, int ba
     CHECK(cudaFree(buffers[outputIndex]));
 }
 
-int main(int argc, char** argv) 
+
+bool
+find_filelists(std::string& val_folder_path, std::vector<std::string>& file_lists)
 {
-    if (argc != 2) 
+    int found = val_folder_path.rfind("/");
+    std::string txt_path = val_folder_path.substr(0, val_folder_path.size() - found) + "/wider_val.txt";
+    std::ifstream ifs (txt_path.c_str(), std::ifstream::in);
+    std::string s ;
+    while(getline(ifs, s))
     {
-        std::cerr << "arguments not right!" << std::endl;
-        std::cerr << "./retina_r50 -s   // serialize model to plan file" << std::endl;
-        std::cerr << "./retina_r50 -d   // deserialize plan file and run inference" << std::endl;
-        return -1;
+        file_lists.push_back(s);
     }
 
+    ifs.close();
+    return file_lists.size() > 0 ? true : false;
+}
+
+
+int main(int argc, char** argv) 
+{
+    if (argc != 5) 
+    {
+        std::cerr << "arguments not right!" << std::endl;
+        std::cerr << "./eval_r50 -r   // widerface val path for eval" << std::endl;
+        std::cerr << "./eval_r50 -w   // eval result save path" << std::endl;
+        return -1;
+    }
     cudaSetDevice(DEVICE);
     // create a model using the API directly and serialize it to a stream
     char *trtModelStream{nullptr};
     size_t size{0};
-
-    if (std::string(argv[1]) == "-s") 
+    std::ifstream file("../retina_r50.engine", std::ios::binary);
+    if (file.good()) 
     {
-        IHostMemory* modelStream{nullptr};
-        APIToModel(BATCH_SIZE, &modelStream);
-        assert(modelStream != nullptr);
-
-        std::ofstream p("../retina_r50.engine", std::ios::binary);
-        if (!p) 
-        {
-            std::cerr << "could not open plan output file" << std::endl;
-            return -1;
-        }
-        p.write(reinterpret_cast<const char*>(modelStream->data()), modelStream->size());
-        modelStream->destroy();
-        return 1;
-    } 
-    else if (std::string(argv[1]) == "-d") 
-    {
-        std::ifstream file("../retina_r50.engine", std::ios::binary);
-        if (file.good()) 
-        {
-            file.seekg(0, file.end);
-            size = file.tellg();
-            file.seekg(0, file.beg);
-            trtModelStream = new char[size];
-            assert(trtModelStream);
-            file.read(trtModelStream, size);
-            file.close();
-        }
-    } 
+        file.seekg(0, file.end);
+        size = file.tellg();
+        file.seekg(0, file.beg);
+        trtModelStream = new char[size];
+        assert(trtModelStream);
+        file.read(trtModelStream, size);
+        file.close();
+    }
     else 
     {
         return -1;
     }
 
     static float data[BATCH_SIZE * 3 * INPUT_H * INPUT_W];          // network input 
+    std::string folder_path(argv[2]);               // 图像路径
+    std::vector<std::string> file_lists = {};       // 所有图像名列表
+    std::string image_path = {};                    // 图像路径 + 图像名
 
-    cv::Mat img = cv::imread("worlds-largest-selfie.jpg");
-    cv::Mat pr_img = preprocess_img(img, INPUT_W, INPUT_H);
+    std::string save_path (argv[4]);                // 推理结果保存路径
+    std::string save_txt_path = {};                 // txt结果保存路径
+    std::string save_dirpath = {};                  // txt文件的路径
+    std::string image_name_content = {};            // 文件名的主体
 
-    // For multi-batch, I feed the same image multiple times.
-    // If you want to process different images in a batch, you need adapt it.
-    for (int b = 0; b < BATCH_SIZE; b++) 
-    {
-        float *p_data = &data[b * 3 * INPUT_H * INPUT_W];
-        for (int i = 0; i < INPUT_H * INPUT_W; i++) 
-        {
-            p_data[i] = pr_img.at<cv::Vec3b>(i)[0] - 104.0;
-            p_data[i + INPUT_H * INPUT_W] = pr_img.at<cv::Vec3b>(i)[1] - 117.0;
-            p_data[i + 2 * INPUT_H * INPUT_W] = pr_img.at<cv::Vec3b>(i)[2] - 123.0;
-        }
-    }
-
-    IRuntime* runtime = createInferRuntime(gLogger);
+    IRuntime* runtime = nullptr;
+    ICudaEngine* engine = nullptr;
+    IExecutionContext* context = nullptr;
+    runtime = createInferRuntime(gLogger);
     assert(runtime != nullptr);
-    ICudaEngine* engine = runtime->deserializeCudaEngine(trtModelStream, size);
-
+    engine = runtime->deserializeCudaEngine(trtModelStream, size);
     assert(engine != nullptr);
-    IExecutionContext* context = engine->createExecutionContext();
+    context = engine->createExecutionContext();
     assert(context != nullptr);
 
-    // Run inference
-    static float prob[BATCH_SIZE * OUTPUT_SIZE];
-    // for (int cc = 0; cc < 1000; cc++) 
-    // {
-    auto start = std::chrono::system_clock::now();
-    doInference(*context, data, prob, BATCH_SIZE);
-    auto end = std::chrono::system_clock::now();
-    std::cout << std::chrono::duration_cast<std::chrono::microseconds>(end - start).count() << "us" << std::endl;
-    // }
-
-    for (int b = 0; b < BATCH_SIZE; b++) 
+    if(find_filelists(folder_path, file_lists))
     {
-        std::vector<decodeplugin::Detection> res;
-        nms(res, &prob[b * OUTPUT_SIZE], IOU_THRESH);
-        std::cout << "number of detections -> " << prob[b * OUTPUT_SIZE] << std::endl;
-        std::cout << " -> " << prob[b * OUTPUT_SIZE + 10] << std::endl;
-        std::cout << "after nms -> " << res.size() << std::endl;
-
-        cv::Mat tmp = img.clone();
-        for (size_t j = 0; j < res.size(); j++) 
+        for(auto& image_name : file_lists)
         {
-            if (res[j].class_confidence < CONF_THRESH) continue;
-            cv::Rect r = get_rect_adapt_landmark(tmp, INPUT_W, INPUT_H, res[j].bbox, res[j].landmark);
-            cv::rectangle(tmp, r, cv::Scalar(0x27, 0xC1, 0x36), 2);
-            
-            for (int k = 0; k < 10; k += 2) 
+            image_path = folder_path + image_name;
+    
+            cv::Mat img = cv::imread(image_path);
+            cv::Mat pr_img = preprocess_img(img, INPUT_W, INPUT_H);
+
+            // For multi-batch, I feed the same image multiple times.
+            // If you want to process different images in a batch, you need adapt it.
+            for (int b = 0; b < BATCH_SIZE; b++) 
             {
-                cv::circle(tmp, cv::Point(res[j].landmark[k], res[j].landmark[k + 1]), 1, cv::Scalar(255 * (k > 2), 255 * (k > 0 && k < 8), 255 * (k < 6)), 4);
+                float *p_data = &data[b * 3 * INPUT_H * INPUT_W];
+                for (int i = 0; i < INPUT_H * INPUT_W; i++) 
+                {
+                    p_data[i] = pr_img.at<cv::Vec3b>(i)[0] - 104.0;
+                    p_data[i + INPUT_H * INPUT_W] = pr_img.at<cv::Vec3b>(i)[1] - 117.0;
+                    p_data[i + 2 * INPUT_H * INPUT_W] = pr_img.at<cv::Vec3b>(i)[2] - 123.0;
+                }
+            }
+
+            // Run inference
+            static float prob[BATCH_SIZE * OUTPUT_SIZE];
+
+            auto start = std::chrono::system_clock::now();
+            doInference(*context, data, prob, BATCH_SIZE);
+            auto end = std::chrono::system_clock::now();
+            std::cout << std::chrono::duration_cast<std::chrono::microseconds>(end - start).count() << "us" << std::endl;
+
+            for (int b = 0; b < BATCH_SIZE; b++) 
+            {
+                std::vector<decodeplugin::Detection> res;
+                nms(res, &prob[b * OUTPUT_SIZE], IOU_THRESH);
+                // widerface_evaluate/widerface_txt/0--Parade/0_Parade_marchingband_1_20.txt
+                save_txt_path = save_path + image_name.substr(0, image_name.size()-4) + ".txt";
+                int found = image_name.rfind("/");
+                if(found != std::string::npos)
+                {
+                    // widerface_evaluate/widerface_txt/0--Parade
+                    save_dirpath = save_path + image_name.substr(0, found);
+                }
+                else return -1;
+                DIR * dir = nullptr;
+                
+                if ((dir = opendir(save_dirpath.c_str())) == nullptr)  // 如果不存在则创建该folder
+                {
+                    int ret = mkdir(save_dirpath.c_str(), 0755);
+                    if (ret != 0) return -1;
+                }
+                std::ofstream ofs(save_txt_path, std::ofstream::out);
+                // /0--Parade/0_Parade_marchingband_1_20.jpg
+                image_name_content = image_name.substr(found+1, image_name.size() - found - 1 - 4);
+                ofs << image_name_content << "\n";
+                ofs << res.size()  << "\n";
+
+                cv::Mat tmp = img.clone();
+                for (size_t j = 0; j < res.size(); j++) 
+                {
+                    if (res[j].class_confidence < CONF_THRESH) continue;
+                    // r : left, top, width, height
+                    cv::Rect r = get_rect_adapt_landmark(tmp, INPUT_W, INPUT_H, res[j].bbox, res[j].landmark);
+                    ofs << r.x << " " << r.y << " " << r.width << " " << r.height << " " << res[j].class_confidence << "\n";
+                    cv::rectangle(tmp, r, cv::Scalar(0x27, 0xC1, 0x36), 2);
+                    
+                    for (int k = 0; k < 10; k += 2) 
+                    {
+                        cv::circle(tmp, cv::Point(res[j].landmark[k], res[j].landmark[k + 1]), 1, cv::Scalar(255 * (k > 2), 255 * (k > 0 && k < 8), 255 * (k < 6)), 4);
+                    }
+                }
+                // cv::imwrite(save_txt_path.substr(0, save_txt_path.size()-4) + ".jpg", tmp);
+                ofs.close();
             }
         }
-        cv::imwrite(std::to_string(b) + "_result.jpg", tmp);
     }
-
     // Destroy the engine
     context->destroy();
     engine->destroy();
