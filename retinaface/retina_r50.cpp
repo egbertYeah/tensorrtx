@@ -8,12 +8,13 @@
 #include "logging.h"
 #include "common.hpp"
 #include "calibrator.h"
+#include "face_align.h"
 
 #define USE_INT8  // set USE_INT8 or USE_FP16 or USE_FP32
 #define DEVICE 0  // GPU id
 #define BATCH_SIZE 1
-#define CONF_THRESH 0.02
-#define IOU_THRESH 0.4
+#define CONF_THRESH 0.9
+#define IOU_THRESH 0.5
 
 // stuff we know about the network and the input/output blobs
 static const int INPUT_H = decodeplugin::INPUT_H;  // H, W must be able to  be divided by 32.
@@ -368,7 +369,7 @@ int main(int argc, char** argv)
 
     static float data[BATCH_SIZE * 3 * INPUT_H * INPUT_W];          // network input 
 
-    cv::Mat img = cv::imread("worlds-largest-selfie.jpg");
+    cv::Mat img = cv::imread("../sample.jpg");
     cv::Mat pr_img = preprocess_img(img, INPUT_W, INPUT_H);
 
     // For multi-batch, I feed the same image multiple times.
@@ -401,7 +402,16 @@ int main(int argc, char** argv)
     auto end = std::chrono::system_clock::now();
     std::cout << std::chrono::duration_cast<std::chrono::microseconds>(end - start).count() << "us" << std::endl;
     // }
-
+    float std_landmarks_data[10] = {
+                                38.2946, 51.6963, 
+                                73.5318, 51.5014, 
+                                56.0252, 71.7366, 
+                                41.5493, 92.3655,
+                                70.7299, 92.2041
+                            };
+    float org_landmarks_data[10]; 
+    FaceAlgin obj ;
+    cv::Mat similarity_matrix;
     for (int b = 0; b < BATCH_SIZE; b++) 
     {
         std::vector<decodeplugin::Detection> res;
@@ -419,8 +429,20 @@ int main(int argc, char** argv)
             
             for (int k = 0; k < 10; k += 2) 
             {
+                org_landmarks_data[k] = res[j].landmark[k] - r.x;
+                org_landmarks_data[k + 1] = res[j].landmark[k + 1] - r.y;
+                // cout << org_landmarks_data[k] << " " << org_landmarks_data[k + 1] << " ";
                 cv::circle(tmp, cv::Point(res[j].landmark[k], res[j].landmark[k + 1]), 1, cv::Scalar(255 * (k > 2), 255 * (k > 0 && k < 8), 255 * (k < 6)), 4);
             }
+            // cout << endl;
+            similarity_matrix = obj.estimate(org_landmarks_data, std_landmarks_data) ;
+            // cout << similarity_matrix << endl;
+
+            cv::Mat face_data = img(r).clone();
+            // cv::imwrite("face.jpg", face_data);
+            cv::Mat affine ;
+            cv::warpAffine(face_data, affine, similarity_matrix, cv::Size(112, 112));
+            cv::imwrite("affine_face.jpg", affine);
         }
         cv::imwrite(std::to_string(b) + "_result.jpg", tmp);
     }

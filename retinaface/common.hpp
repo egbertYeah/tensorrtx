@@ -85,6 +85,7 @@ static inline cv::Rect get_rect_adapt_landmark(cv::Mat& img, int input_w, int in
             lmk[i + 1] /= r_h;
         }
     }
+    // std::cout << "left-top: " << l << " " << t << std::endl;
     return cv::Rect(l, t, r-l, b-t);
 }
 

@@ -356,7 +356,7 @@ int main(int argc, char** argv) {
         IHostMemory* modelStream{nullptr};
         APIToModel(BATCH_SIZE, &modelStream);
         assert(modelStream != nullptr);
-        std::ofstream p("arcface-mobilefacenet.engine", std::ios::binary);
+        std::ofstream p("../arcface-mobilefacenet.engine", std::ios::binary);
         if (!p) {
             std::cerr << "could not open plan output file" << std::endl;
             return -1;
@@ -365,7 +365,7 @@ int main(int argc, char** argv) {
         modelStream->destroy();
         return 0;
     } else if (argc == 2 && std::string(argv[1]) == "-d") {
-        std::ifstream file("arcface-mobilefacenet.engine", std::ios::binary);
+        std::ifstream file("../arcface-mobilefacenet.engine", std::ios::binary);
         if (file.good()) {
             file.seekg(0, file.end);
             size = file.tellg();
@@ -395,7 +395,7 @@ int main(int argc, char** argv) {
     assert(context != nullptr);
     delete[] trtModelStream;
 
-    cv::Mat img = cv::imread("../joey0.ppm");
+    cv::Mat img = cv::imread("../lyf1.jpg");
     for (int i = 0; i < INPUT_H * INPUT_W; i++) {
         data[i] = ((float)img.at<cv::Vec3b>(i)[2] - 127.5) * 0.0078125;
         data[i + INPUT_H * INPUT_W] = ((float)img.at<cv::Vec3b>(i)[1] - 127.5) * 0.0078125;
@@ -412,7 +412,7 @@ int main(int argc, char** argv) {
     cv::Mat out_norm;
     cv::normalize(out, out_norm);
 
-    img = cv::imread("../joey1.ppm");
+    img = cv::imread("../lyf2.jpg");
     for (int i = 0; i < INPUT_H * INPUT_W; i++) {
         data[i] = ((float)img.at<cv::Vec3b>(i)[2] - 127.5) * 0.0078125;
         data[i + INPUT_H * INPUT_W] = ((float)img.at<cv::Vec3b>(i)[1] - 127.5) * 0.0078125;
